@@ -9,7 +9,7 @@ data/
 *.hdf5
 
 # ─── Outputs generados (se reproducen ejecutando el código) ──
-outputs/
+#outputs/
 
 # ─── MLflow (se genera localmente al ejecutar) ───────────────
 mlruns/
