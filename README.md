@@ -35,15 +35,14 @@ scout_promesas/
 ├── notebooks/
 │   ├── 01_extraccion_exploracion.ipynb
 │   ├── 02_modelo_predictivo.ipynb
-│   └── 03_simulacion_montecarlo.ipynb  ← en desarrollo
-│
-├── src/                               ← pipelines de producción
-│   ├── pipeline_modelo.py             ← en desarrollo
-│   └── integracion_llm.py             ← en desarrollo
+│   ├── 03_simulacion_montecarlo.ipynb
+│   └── 04_integracion_llm.ipynb
 │
 ├── outputs/
 │   ├── paso1/                         ← plots EDA + dataset curado
-│   └── paso2/                         ← modelo, ranking, predicciones
+│   ├── paso2/                         ← modelo, ranking, predicciones
+│   ├── paso3/                         ← simulaciones Montecarlo
+│   └── paso4/                         ← reportes de scouting (.md)
 │
 ├── mlruns/                            ← experimentos MLflow (local)
 ├── requirements.txt
@@ -79,8 +78,8 @@ scout_promesas/
 `notebooks/01_extraccion_exploracion.ipynb`
 
 - Carga y exploración de los 11 archivos fuente
-- Construcción del dataset maestro (7 merges encadenados)
-- 10 visualizaciones EDA
+- Construcción del dataset maestro con 7 merges encadenados
+- 10 visualizaciones EDA (calidad de datos, distribuciones, correlaciones, top 25 promesas)
 - Dataset curado: **31,405 jugadores × 48 variables**
 
 **Outputs:**
@@ -92,12 +91,12 @@ scout_promesas/
 ### ✅ Paso 2 — Modelo Predictivo + MLflow
 `notebooks/02_modelo_predictivo.ipynb`
 
-- Feature engineering (31 features finales)
-- Entrenamiento LightGBM y XGBoost con 5-Fold CV
-- Comparación de modelos por métricas OOF
-- Análisis de residuos
-- Interpretabilidad con SHAP
-- Ranking de 31,405 jugadores por valor predicho
+- Feature engineering: 31 features finales, imputación, encoding, variables derivadas
+- Entrenamiento LightGBM y XGBoost con validación cruzada 5-Fold
+- Métricas OOF (Out-Of-Fold): cada jugador predicho por un modelo que nunca lo vio
+- Análisis de residuos y comparación de modelos
+- Interpretabilidad con SHAP values
+- Ranking completo de 31,405 jugadores por valor predicho
 - Tracking de experimentos con MLflow
 
 **Variable objetivo:** `log(1 + market_value_eur)`
@@ -106,26 +105,40 @@ scout_promesas/
 - `outputs/paso2/ranking_promesas.csv`
 - `outputs/paso2/scouting_dataset_v2_con_predicciones.csv`
 - `outputs/paso2/*.png` (8 plots)
-- `mlruns/` (experimentos MLflow)
+- `mlruns/` (experimentos MLflow — ver con `mlflow ui`)
 
 ---
 
-### 🔜 Paso 3 — Simulación Montecarlo
+### ✅ Paso 3 — Simulación Montecarlo
 `notebooks/03_simulacion_montecarlo.ipynb`
 
-- Proyección de valor de mercado a 3 y 5 años
-- 10,000 simulaciones por jugador
-- Escenarios optimista, base y pesimista
-- Intervalos de confianza por perfil
+- Calibración de distribución log-normal con 394,243 transiciones reales de valor (2003–2025)
+- Parámetros por posición × banda de edad (14-18, 18-20, 20-22, 22-24, 24-26, 26-28, 28-30)
+- 10,000 simulaciones por jugador a 1, 3 y 5 años
+- Escenarios pesimista (P10), base (P50) y optimista (P90)
+- Shock estocástico de lesión: 15% de probabilidad anual
+- Ranking de "joyas ocultas": alto upside, valor actual moderado
+
+**Outputs:**
+- `outputs/paso3/simulaciones_montecarlo.csv` (proyecciones top 100)
+- `outputs/paso3/joyas_ocultas_top50.csv`
+- `outputs/paso3/*.png` (5 plots)
 
 ---
 
-### 🔜 Paso 4 — Integración LLM
-`src/integracion_llm.py`
+### ✅ Paso 4 — Integración LLM
+`notebooks/04_integracion_llm.ipynb`
 
-- Recomendaciones automáticas basadas en el ranking
-- Justificación en lenguaje natural de cada candidato
-- Generación de reportes de scouting
+- LLM: **Llama 3.3 70B** vía **Groq API** (gratuito, sin tarjeta de crédito)
+- Tres tipos de análisis: reporte individual, comparativa por posición, joyas ocultas
+- Modo interactivo: `analizar_jugador("nombre")` para consultas en tiempo real
+- Informe consolidado en Markdown con todos los reportes
+
+**Outputs:**
+- `outputs/paso4/reporte_[jugador].md`
+- `outputs/paso4/comparativa_[posicion].md`
+- `outputs/paso4/joyas_ocultas_analisis.md`
+- `outputs/paso4/informe_completo_scouting.md`
 
 ---
 
@@ -144,9 +157,30 @@ venv\Scripts\activate         # Windows
 # 3. Instalar dependencias
 pip install -r requirements.txt
 
-# 4. Colocar los CSV en la carpeta data/
+# 4. Colocar los 11 CSV en la carpeta data/
 
-# 5. Ejecutar los notebooks en orden
+# 5. Ejecutar los notebooks en orden (01 → 02 → 03 → 04)
+```
+
+---
+
+## Configuración del LLM (Paso 4)
+
+El Paso 4 usa la API gratuita de Groq. Para obtener la key:
+
+1. Ve a https://console.groq.com/keys
+2. Crea una cuenta gratuita (sin tarjeta)
+3. Genera una API key
+4. Configúrala como variable de entorno:
+
+```bash
+# Windows PowerShell
+$env:GROQ_API_KEY = "gsk_..."
+
+# Mac/Linux
+export GROQ_API_KEY="gsk_..."
+
+# PyCharm: Run → Edit Configurations → Environment variables
 ```
 
 ---
@@ -154,9 +188,13 @@ pip install -r requirements.txt
 ## Visualizar experimentos MLflow
 
 ```bash
+# Desde la carpeta raíz del proyecto
 mlflow ui
-# Abrir en el navegador: http://127.0.0.1:5000
+# Abrir: http://127.0.0.1:5000
 ```
+
+Registra automáticamente parámetros, métricas OOF por fold y artefactos
+de LightGBM y XGBoost para comparación de experimentos.
 
 ---
 
@@ -170,16 +208,16 @@ mlflow ui
 | `scikit-learn` | Validación cruzada y métricas |
 | `shap` | Interpretabilidad del modelo |
 | `mlflow` | Tracking de experimentos |
-| `scipy` | Simulación Montecarlo (Paso 3) |
-| `anthropic` | Integración LLM (Paso 4) |
+| `scipy` | Simulación Montecarlo |
+| `groq` | Integración LLM (Llama 3.3 70B) |
 
 ---
 
 ## Estado del proyecto
 
-| Paso | Estado |
-|---|---|
-| Extracción y exploración | ✅ Completado |
-| Modelo predictivo + MLflow | ✅ Completado |
-| Simulación Montecarlo | 🔄 En desarrollo |
-| Integración LLM | 🔄 Pendiente |
+| Paso | Estado | Descripción |
+|---|---|---|
+| Extracción y exploración | ✅ Completado | 31,405 jugadores × 48 variables |
+| Modelo predictivo + MLflow | ✅ Completado | LightGBM/XGBoost + SHAP + OOF CV |
+| Simulación Montecarlo | ✅ Completado | Proyección 1/3/5 años · 10K sims/jugador |
+| Integración LLM | ✅ Completado | Llama 3.3 70B vía Groq (gratuito) |
