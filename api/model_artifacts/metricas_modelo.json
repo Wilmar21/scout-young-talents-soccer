@@ -1,0 +1,9 @@
+{
+  "modelo": "LightGBM",
+  "oof_r2": 0.9708,
+  "oof_rmse": 0.2831,
+  "oof_mae": 0.1884,
+  "n_features": 32,
+  "n_train": 17035,
+  "target": "log_market_value"
+}

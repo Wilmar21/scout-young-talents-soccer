@@ -221,3 +221,239 @@ de LightGBM y XGBoost para comparación de experimentos.
 | Modelo predictivo + MLflow | ✅ Completado | LightGBM/XGBoost + SHAP + OOF CV |
 | Simulación Montecarlo | ✅ Completado | Proyección 1/3/5 años · 10K sims/jugador |
 | Integración LLM | ✅ Completado | Llama 3.3 70B vía Groq (gratuito) |
+
+
+
+   
+# Scout de Jóvenes Promesas — API
+ 
+API REST para predicción de valor de mercado de jugadores de fútbol jóvenes.
+Construida con **FastAPI** · Modelo **LightGBM** · R² OOF = 0.97
+ 
+---
+ 
+## Estructura
+ 
+```
+api/
+├── app/
+│   ├── main.py          ← endpoints FastAPI
+│   ├── predictor.py     ← lógica de predicción y simulación
+│   └── schemas.py       ← modelos Pydantic (request/response)
+├── model_artifacts/
+│   ├── modelo_final.pkl
+│   ├── encoder_posicion.pkl
+│   ├── encoder_pie.pkl
+│   ├── encoder_liga.pkl
+│   ├── features.json
+│   ├── feature_medians.json
+│   ├── metricas_modelo.json
+│   └── dataset_con_predicciones.csv
+└── requirements.txt
+```
+ 
+---
+ 
+## Instalación y ejecución local
+ 
+```bash
+cd api
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+ 
+Documentación interactiva disponible en: **http://localhost:8000/docs**
+ 
+---
+ 
+## Endpoints
+ 
+### `GET /jugadores/buscar?nombre={nombre}`
+Busca jugadores por nombre parcial en el dataset.
+ 
+**Parámetros:**
+- `nombre` (str, requerido) — fragmento del nombre del jugador
+- `limit` (int, opcional, default=10) — máximo de resultados
+**Ejemplo:**
+```bash
+curl "http://localhost:8000/jugadores/buscar?nombre=Bellingham"
+```
+```json
+{
+  "total_encontrados": 2,
+  "jugadores": [
+    {
+      "player_id": 581678,
+      "nombre": "Jude Bellingham",
+      "edad": 21.5,
+      "posicion": "Midfield",
+      "club": "Real Madrid",
+      "liga": "LaLiga",
+      "valor_real_M": 180.0,
+      "valor_predicho_M": 140.3
+    }
+  ]
+}
+```
+ 
+---
+ 
+### `GET /jugadores/{player_id}`
+Perfil completo y valor predicho de un jugador por su ID.
+ 
+**Ejemplo:**
+```bash
+curl "http://localhost:8000/jugadores/581678"
+```
+```json
+{
+  "player_id": 581678,
+  "nombre": "Jude Bellingham",
+  "edad": 21.5,
+  "posicion": "Midfield",
+  "club": "Real Madrid",
+  "liga": "LaLiga",
+  "valor_real_eur": 180000000.0,
+  "valor_predicho_eur": 140300000.0,
+  "valor_predicho_M": 140.3,
+  "diferencia_pct": -22.1
+}
+```
+ 
+---
+ 
+### `POST /predecir`
+Calcula el valor de mercado estimado para un jugador nuevo.
+Los campos no proporcionados se imputan con la mediana de su posición.
+ 
+**Body (JSON):**
+ 
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `nombre` | string | ✓ | Nombre del jugador |
+| `edad` | float | ✓ | Edad en años (ej: 21.5) |
+| `main_position` | string | ✓ | Attack / Midfield / Defender / Goalkeeper |
+| `height` | float | — | Altura en cm |
+| `foot` | string | — | right / left / both |
+| `is_eu` | bool | — | Ciudadano de la UE |
+| `league` | string | — | Liga actual (ej: "Bundesliga") |
+| `total_goals` | float | — | Goles en toda la carrera |
+| `total_assists` | float | — | Asistencias en toda la carrera |
+| `total_minutes` | float | — | Minutos jugados totales |
+| `n_seasons_active` | float | — | Temporadas activas |
+| `n_injuries` | float | — | Número de lesiones |
+| `total_days_missed` | float | — | Días de baja por lesiones |
+| `intl_matches` | float | — | Partidos con selección nacional |
+| `value_max` | float | — | Valor de mercado máximo histórico (€) |
+| `value_growth_pct` | float | — | Multiplicador de crecimiento histórico |
+| `n_valuations` | float | — | Número de valoraciones registradas |
+| `n_transfers` | float | — | Número de transferencias |
+| `max_fee` | float | — | Fee máximo pagado por el jugador (€) |
+ 
+**Ejemplo:**
+```bash
+curl -X POST http://localhost:8000/predecir \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nombre": "Carlos Rodriguez",
+    "edad": 21,
+    "main_position": "Attack",
+    "height": 178,
+    "foot": "right",
+    "is_eu": false,
+    "league": "Bundesliga",
+    "total_goals": 15,
+    "total_assists": 8,
+    "total_minutes": 3200,
+    "n_seasons_active": 3,
+    "n_injuries": 1,
+    "intl_matches": 5,
+    "value_max": 1500000,
+    "n_transfers": 1,
+    "max_fee": 500000
+  }'
+```
+```json
+{
+  "nombre": "Carlos Rodriguez",
+  "edad": 21.0,
+  "posicion": "Attack",
+  "valor_predicho_eur": 1280000.0,
+  "valor_predicho_M": 1.28,
+  "mensaje": "Carlos Rodriguez (Attack, 21.0a) — valor estimado: 1.28M€ (jugador con proyección interesante)"
+}
+```
+ 
+---
+ 
+### `POST /proyectar`
+Simulación Montecarlo del valor futuro a 1, 3 o 5 años.
+Calibrada con 394,243 transiciones reales de valor (2003–2025).
+ 
+**Body (JSON):**
+ 
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `valor_inicial_eur` | float | ✓ | Valor de mercado actual en € |
+| `edad` | float | ✓ | Edad actual |
+| `main_position` | string | ✓ | Attack / Midfield / Defender / Goalkeeper |
+| `horizonte_anos` | int | ✓ | 1, 3 o 5 |
+| `n_simulaciones` | int | — | Entre 1000 y 10000 (default: 5000) |
+ 
+**Ejemplo:**
+```bash
+curl -X POST http://localhost:8000/proyectar \
+  -H "Content-Type: application/json" \
+  -d '{
+    "valor_inicial_eur": 1280000,
+    "edad": 21,
+    "main_position": "Attack",
+    "horizonte_anos": 3
+  }'
+```
+```json
+{
+  "horizonte_anos": 3,
+  "valor_actual_M": 1.28,
+  "pesimista_M": 0.62,
+  "base_M": 1.62,
+  "optimista_M": 4.35,
+  "media_M": 2.1,
+  "prob_duplicar_pct": 27.3,
+  "interpretacion": "Crecimiento moderado esperado (+26.6%). Perfil con recorrido de valorización."
+}
+```
+ 
+---
+ 
+### `GET /modelo/info`
+Métricas del modelo entrenado.
+ 
+```bash
+curl http://localhost:8000/modelo/info
+```
+```json
+{
+  "modelo": "LightGBM",
+  "oof_r2": 0.9708,
+  "oof_rmse": 0.2831,
+  "n_train": 17035,
+  "n_features": 32,
+  "target": "log_market_value"
+}
+```
+ 
+---
+ 
+## Deploy gratuito en Render
+ 
+1. Sube la carpeta `api/` a un repositorio de GitHub
+2. Ve a https://render.com → New Web Service
+3. Conecta el repo → selecciona la carpeta `api/`
+4. Configura:
+   - **Build command:** `pip install -r requirements.txt`
+   - **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. Deploy → URL pública disponible en ~2 minutos
+> **Nota:** el plan gratuito de Render hiberna el servicio tras 15 minutos
+> de inactividad. La primera request después de la hibernación tarda ~30
+> segundos en responder (cold start).
